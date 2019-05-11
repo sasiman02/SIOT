@@ -1,79 +1,107 @@
-#include <ESP8266WiFi.h>
-#include <time.h>
+//*******************************************************************************
+// Project : ESP8266 ESP-01 in Advenced set(Get Weather)
+// Board : Arduino Uno 
+// By : Kit Plus
+//*******************************************************************************/
+#include "WiFiEsp.h"
+#include "SoftwareSerial.h"
+SoftwareSerial esp(3, 2); // RX, TX
+char ssid[] = "김현수의 iPhone";            // Your AP SSID
+char pass[] = "999999999";               // Your AR Password
+int status = WL_IDLE_STATUS;        // Status
+unsigned long ulPreTime = 0;
+bool flag_stop;
 
-const char* ssid = "김현수의 iPhone";  // AP SSID
-const char* password = "999999999"; // AP password
-
-const int httpPort = 80;
-
-const String KMA_url = "/wid/queryDFSRSS.jsp?zone=4511358000";
-
-const char* SERVER = "www.kma.go.kr";
-
-
-void setup(void) {
+void setup()
+{
   Serial.begin(9600);
+  esp.begin(9600);
+  Serial.println("Start get weather forecast");
+  WiFi.init(&esp);
+  Serial.println("Completed esp init");
 
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  Serial.println("\nConnecting to WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    delay(1000);
+  if (WiFi.status() == WL_NO_SHIELD)
+  {
+    Serial.println("WiFi shield not present");
+    while (true);
   }
-
+  // Check WIFI connection
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    status = WiFi.begin(ssid, pass);
+  }
+  pinMode(13,OUTPUT);
 }
-
-void loop() {
-  WiFiClient client;
-  String a[3];
-  int i = 0;
+String preTime="00000000";
+const String KMA_url = "/wid/queryDFSRSS.jsp?zone=1117053000";
+const char* wSERVER = "www.kma.go.kr";
+#define httpPort 80
+int GetWeatherInformWIFI() {
+  WiFiEspClient client;
+  int i=0;
   String temp;
-  String wfEn;
-  String reh;
+  String nowTime;
   String tmp_str;
-
-  if (client.connect(SERVER, httpPort)) {
-
+  int cnt=0;
+  int res=1;
+  float t=0;
+  Serial.println("start connect webserver");
+  client.setTimeout(5000);
+  client.flush();
+  if (client.connect(wSERVER, httpPort)) {
     client.print(String("GET ") + KMA_url + " HTTP/1.1\r\n" +
-                 "Host: " + SERVER + "\r\n" +
-                 "Connection: close\r\n\r\n");
-
-    delay(10);
-    while (client.available()) {
-      String line = client.readStringUntil('\n');
-
-      i = line.indexOf("</temp>");
-
-      if (i > 0) {
-        tmp_str = "<temp>";
-        temp = line.substring(line.indexOf(tmp_str) + tmp_str.length(), i);
-        Serial.println(temp);
-
-      }
-
-      i = line.indexOf("</wfEn>");
-
-      if (i > 0) {
-        tmp_str = "<wfEn>";
-        wfEn = line.substring(line.indexOf(tmp_str) + tmp_str.length(), i);
-        Serial.println(wfEn);
-      }
-
-      i = line.indexOf("</reh>");
-
-      if (i > 0) {
-        tmp_str = "<reh>";
-        reh = line.substring(line.indexOf(tmp_str) + tmp_str.length(), i);
-        Serial.println(reh);
-        break;
-      }
-    }
+    "Host: " + wSERVER + "\r\n" + 
+    "Connection: close\r\n\r\n");
   }
+   delay(1000);
+   while(client.available()){    
+    yield();
+    String line = client.readStringUntil('\n');
+   
+    // search forecast weather string
+    i = line.indexOf("</tm>");
+    if(i > 0) {
+      tmp_str="<tm>";
+      nowTime=line.substring(line.indexOf(tmp_str)+tmp_str.length(),i - 4);
+      Serial.println(nowTime);
+    }
 
-  tft.drawString("Temperature:" + temp, 10, 50, GFXFF); // Print the string name of the font
-  tft.drawString("Humidity :" + reh,  10, 80, GFXFF); // Print the string name of the font
-  tft.drawString("Cloudy:" + wfEn, 10, 110, GFXFF); // Print the string name of the font
-
-  delay(1000);
+//      preTime = nowTime;
+      i= line.indexOf("</wfEn>");
+      if(i>0){
+        tmp_str="<wfEn>";
+        temp = line.substring(line.indexOf(tmp_str)+tmp_str.length(),i);
+        Serial.println(temp);
+        if(!preTime.equals(nowTime) && (temp.equals("Rain") || temp.equals("Snow/Rain")|| temp.equals("Clear"))) {
+            preTime = nowTime;
+            Serial.println("Buzzer On");
+            analogWrite(13,255);
+            delay(100);
+            analogWrite(13,0);
+            Serial.println("Buzzer Off");
+        }
+        
+      res=0;
+      break;
+      }
+   }
+  if(res == 1){ 
+    Serial.println("Wifi weather Fail!");
+  }else{
+    Serial.println("Wifi weather OK!");
+  }
+  client.stop();
+  
+  return res;
 }
+void loop()
+{
+  unsigned long ulCurTime = millis();
+  // period 1 sec
+  if (ulCurTime - ulPreTime >= 1000)
+  {
+    ulPreTime = ulCurTime;
+    GetWeatherInformWIFI();
+  }
+}
+ 
